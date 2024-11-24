@@ -1,0 +1,91 @@
+services:
+  nginx:
+    container_name: 'lemp_nginx'
+    image: nginx:alpine
+    restart: always
+    links:
+      - php-82-fpm
+    ports:
+      - "8080:80"
+      - "44380:443"
+    volumes:
+      - ${DATA_DIR:-./data}/nginx/enabled:/etc/nginx/conf.d
+      - ${DATA_DIR:-./data}/nginx/snippets:/nginx/snippets
+      - ${DATA_DIR:-./data}/nginx/certificates:/nginx/certificates
+    volumes_from:
+      - data
+    networks:
+      lempinternal:
+        ipv4_address: 10.10.100.10
+
+  php-82-fpm:
+    container_name: 'lemp_php'
+    #image: php:8.2-fpm-alpine
+    build:
+        dockerfile: ./docker/php82fpm/Dockerfile
+    restart: always
+    volumes_from:
+      - data
+    volumes:
+      - ./docker/php82fpm/php.ini-development:/usr/local/etc/php/php.ini
+    networks:
+      - lempinternal
+
+  data:
+    container_name: 'lemp_volume'
+    image: alpine:latest
+    command: echo "READY!!!"
+    volumes:
+      - ${DATA_DIR:-./data}/vhosts:/vhosts
+      - ${DATA_DIR:-./data}/tmp:/tmp
+      - ${PROJECTS_DIR:-~/Projects/Infinindotech}:/projects
+    networks:
+      - lempinternal
+
+  db:
+    container_name: 'lemp_mariadb'
+    image: mariadb
+    restart: always
+    ports:
+      - ${MARIADB_PORT:-3306}:3306
+    environment:
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-defaultdbadata}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:-defaultroot}
+      - MARIADB_USER=${MARIADB_USER:-defaultuser}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-defaultpassword}
+      - MARIADB_ROOT_HOST=${MARIADB_ROOT_HOST:-%}
+    volumes:
+      - ${MARIADB_DATA_DIR:-./data/mariadb}:/var/lib/mysql
+      - ${MARIADB_INIT_SQL:-./sql}:/docker-entrypoint-initdb.d
+    networks:
+      lempinternal :
+        ipv4_address: ${MARIADB_IP_PROXY_IPV4:-10.10.100.5}
+      mariadbinternal :
+
+  phpmyadmin:
+    container_name: 'lemp_phpmyadmin'
+    image: phpmyadmin/phpmyadmin:latest
+    restart: always
+    ports:
+      - 8081:80
+    environment:
+      - PMA_ARBITRARY=0
+      - PMA_HOST=db
+      - PMA_USER=root
+      - PMA_PASSWORD=defaultroot
+      - UPLOAD_LIMIT=300M
+    depends_on:
+      - db
+    networks:
+      - mariadbinternal
+
+networks:
+  mariadbinternal:
+    name: mariadbphpmyadmin
+  lempinternal:
+    name: lempinternalconnection
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.10.100.0/24
+          gateway: 10.10.100.1
